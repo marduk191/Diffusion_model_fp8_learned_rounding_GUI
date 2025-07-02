@@ -1,4 +1,4 @@
-Looking at your FP8 quantization script, I can see several opportunities for optimization. The main bottlenecks are in the learned rounding conversion process and memory management. Let me create an optimized version:## Key Optimizations Made:
+## Key Optimizations Made:
 
 ### 🚀 **Performance Improvements:**
 
