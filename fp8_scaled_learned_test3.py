@@ -18,17 +18,20 @@ TARGET_FP8_DTYPE = torch.float8_e4m3fn
 COMPUTE_DTYPE = torch.float32
 # Dtype for storing scale factors - ULTRA REDUCED PRECISION FOR MAXIMUM SIZE SAVINGS
 SCALE_DTYPE = torch.uint8  # Changed from float16 to uint8 for maximum compression
-# Scale quantization parameters
-SCALE_MIN_LOG = -10.0  # log10 of minimum scale value (1e-10)
-SCALE_MAX_LOG = 2.0    # log10 of maximum scale value (100)
+# Scale quantization parameters - FIXED RANGE
+SCALE_MIN_LOG = -12.0  # log10 of minimum scale value (1e-12)
+SCALE_MAX_LOG = 6.0    # log10 of maximum scale value (1e6) - much larger range
 SCALE_QUANTIZATION_LEVELS = 255  # Use full uint8 range
 # Minimum tensor size to quantize (parameters below this stay in original dtype)
 MIN_QUANTIZE_SIZE = 1024  # Only quantize tensors with >1024 elements
 
 def quantize_scale_to_uint8(scale: torch.Tensor) -> torch.Tensor:
-    """Convert float scale to quantized uint8 representation"""
+    """Convert float scale to quantized uint8 representation - FIXED VERSION"""
+    # Don't clamp the input scale too aggressively - let the log space handle it
+    scale_clamped = torch.clamp(scale, min=1e-12, max=1e6)  # Much wider range
+    
     # Convert to log scale for better precision distribution
-    log_scale = torch.log10(torch.clamp(scale, min=1e-10, max=100.0))
+    log_scale = torch.log10(scale_clamped)
     
     # Normalize to [0, 1] range
     normalized = (log_scale - SCALE_MIN_LOG) / (SCALE_MAX_LOG - SCALE_MIN_LOG)
@@ -39,7 +42,7 @@ def quantize_scale_to_uint8(scale: torch.Tensor) -> torch.Tensor:
     return quantized
 
 def dequantize_scale_from_uint8(quantized_scale: torch.Tensor) -> torch.Tensor:
-    """Convert quantized uint8 scale back to float"""
+    """Convert quantized uint8 scale back to float - FIXED VERSION"""
     # Normalize back to [0, 1]
     normalized = quantized_scale.to(torch.float32) / SCALE_QUANTIZATION_LEVELS
     
@@ -136,7 +139,7 @@ class OptimizedLearnedRoundingConverter:
         quantized_scale = self._compute_scale_vectorized(W_float32)
         scale = dequantize_scale_from_uint8(quantized_scale).to(self.device)
         
-        if scale.item() == 1.0:  # All zeros case
+        if scale.item() == dequantize_scale_from_uint8(quantize_scale_to_uint8(torch.tensor([1.0]))).item():  # All zeros case
             quantized_tensor = torch.zeros_like(W_float32, dtype=TARGET_FP8_DTYPE)
             return quantized_tensor.cpu(), quantized_scale.cpu()
 
@@ -304,6 +307,7 @@ def convert_to_fp8_scaled(input_file: str, output_file: str, t5xxl: bool, keep_d
     print(f"Output will be saved to: {output_file}")
     print(f"Using FP8 format: {TARGET_FP8_DTYPE}")
     print(f"Scale precision: {SCALE_DTYPE} (8-bit quantized)")
+    print(f"Scale range: {10**SCALE_MIN_LOG:.2e} to {10**SCALE_MAX_LOG:.2e}")
     print(f"Min tensor size for quantization: {min_tensor_size}")
     print(f"Shared scales enabled: {use_shared_scales}")
 
@@ -472,6 +476,7 @@ def convert_to_fp8_scaled(input_file: str, output_file: str, t5xxl: bool, keep_d
     print(f"  - Weights skipped (size)  : {size_skipped_count}")
     print(f"  - Final tensor count      : {len(new_tensors)}")
     print(f"  - Scale format            : 8-bit quantized (uint8)")
+    print(f"  - Scale range             : {10**SCALE_MIN_LOG:.2e} to {10**SCALE_MAX_LOG:.2e}")
     if use_shared_scales:
         print(f"  - Shared scales used      : {len(shared_scales)}")
     print("-" * 50)
@@ -524,7 +529,7 @@ def main():
     
     if not args.output:
         base_name = os.path.splitext(args.input)[0]
-        output_file = f"{base_name}_{fp8_type_str}_scaled_ultra{distill_str}{size_str}.safetensors"
+        output_file = f"{base_name}_{fp8_type_str}_scaled_ultra{distill_str}{size_str}_fixed.safetensors"
     else:
         output_file = args.output
 
