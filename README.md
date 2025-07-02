@@ -1,3 +1,5 @@
+`Example: python ./fp8_scaled_learned_test1.py --input "%input%" --output "%output%" --use-amp --parallel`
+
 ## Key Optimizations Made:
 
 ### 🚀 **Performance Improvements:**
