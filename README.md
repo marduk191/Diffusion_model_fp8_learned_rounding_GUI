@@ -1,4 +1,4 @@
-`Example: python ./fp8_scaled_learned_test1.py --input "%input%" --output "%output%" --use-amp --parallel`
+`python ./fp8_scaled_learned_test3.py --input "%input%" --output "%output%" --use-amp --parallel --use_shared_scales`
 
 # FP8 Converter with 8-bit Scales
 
