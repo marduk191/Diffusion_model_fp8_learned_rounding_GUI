@@ -15,6 +15,7 @@ A size-optimized PyTorch safetensors converter that transforms model weights to 
 - **Early Stopping**: Aggressive convergence detection to reduce processing time
 
 ## Requirements
+You can run this with your comfyui venv, or install the base requirements below:
 
 - PyTorch with FP8 support (`torch.float8_e4m3fn`)
 - safetensors
