@@ -249,3 +249,5 @@ This tool is provided as-is for research and development purposes.
 - **Better convergence** with improved optimizer and scheduling
 
 The script maintains the same quality of quantization while being significantly more efficient. You can further tune the `--calib_samples`, `--num_iter`, and `--lr` parameters based on your specific models and quality requirements.
+
+This project was heavily inspired by the work of clybius at https://github.com/Clybius/Learned-Rounding
