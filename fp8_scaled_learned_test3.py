@@ -163,16 +163,28 @@ class OptimizedLearnedRoundingConverter:
         patience_limit = 30  # Reduced patience for faster convergence
         convergence_threshold = 1e-7  # Tighter convergence
         
-        # AMP scaler if using mixed precision
-        scaler = torch.cuda.amp.GradScaler() if self.use_amp else None
+        # AMP scaler with updated API
+        scaler = None
+        if self.use_amp:
+            try:
+                # Try new API first (PyTorch 2.1+)
+                scaler = torch.amp.GradScaler('cuda')
+            except (AttributeError, TypeError):
+                # Fall back to old API for older PyTorch versions
+                try:
+                    scaler = torch.cuda.amp.GradScaler()
+                except:
+                    self.use_amp = False
+                    print("Warning: Could not initialize AMP scaler, falling back to standard precision")
         
         pbar = tqdm(range(self.num_iter), desc="    Optimizing", leave=False)
         
         for i in pbar:
             beta = self.beta_schedule[i].to(self.device)
             
-            if self.use_amp:
-                with torch.cuda.amp.autocast():
+            if self.use_amp and scaler is not None:
+                # Use the new API for autocast
+                with torch.amp.autocast(device_type='cuda' if self.device == 'cuda' else 'cpu'):
                     # Compute soft quantized weights
                     W_soft_quant = (floor_scaled + h) / scale.to(COMPUTE_DTYPE)
                     Y_quant = self._batched_matmul(X_calib, W_soft_quant)
