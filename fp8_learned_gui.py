@@ -29,6 +29,13 @@ class FP8QuantizationGUI:
         self.beta_end = tk.DoubleVar(value=2.0)
         self.optimizer_choice = tk.StringVar(value="RMSprop")
         
+        # Progress tracking
+        self.total_weights = 0
+        self.processed_weights = 0
+        self.current_weight = ""
+        self.current_iteration = 0
+        self.max_iterations = 0
+        
         self.setup_ui()
         
         # Start checking for output updates
@@ -144,8 +151,17 @@ class FP8QuantizationGUI:
         
         ttk.Button(button_frame, text="Start Conversion", command=self.start_conversion, 
                   style="Accent.TButton").pack(side="left", padx=(0, 10))
-        self.progress_bar = ttk.Progressbar(button_frame, mode="indeterminate")
-        self.progress_bar.pack(side="left", fill="x", expand=True, padx=(0, 10))
+        
+        # Progress section
+        progress_frame = ttk.Frame(button_frame)
+        progress_frame.pack(side="left", fill="x", expand=True, padx=(0, 10))
+        
+        self.progress_bar = ttk.Progressbar(progress_frame, mode="determinate")
+        self.progress_bar.pack(fill="x", pady=(0, 2))
+        
+        self.progress_label = ttk.Label(progress_frame, text="Ready")
+        self.progress_label.pack(anchor="w")
+        
         ttk.Button(button_frame, text="Clear Output", command=self.clear_output).pack(side="right")
         
     def setup_advanced_tab(self, parent):
@@ -235,11 +251,93 @@ The script uses the AdaRound technique adapted for FP8 quantization, which learn
                 message = self.output_queue.get_nowait()
                 self.output_text.insert(tk.END, message + "\n")
                 self.output_text.see(tk.END)
+                self.parse_progress_message(message)
                 self.root.update_idletasks()
         except queue.Empty:
             pass
         finally:
             self.root.after(100, self.check_queue)
+    
+    def parse_progress_message(self, message):
+        """Parse console output to extract progress information"""
+        try:
+            # Look for weight processing messages
+            if "weight tensors to potentially process" in message:
+                # Extract total number of weights
+                import re
+                match = re.search(r'Found (\d+) weight tensors', message)
+                if match:
+                    self.total_weights = int(match.group(1))
+                    self.processed_weights = 0
+                    self.update_progress()
+            
+            elif "Processing tensor:" in message:
+                # Extract current weight being processed
+                import re
+                match = re.search(r'\((\d+)/(\d+)\) Processing tensor: (.+)', message)
+                if match:
+                    current_num = int(match.group(1))
+                    total_num = int(match.group(2))
+                    weight_name = match.group(3)
+                    self.processed_weights = current_num - 1  # -1 because we're starting to process
+                    self.current_weight = weight_name
+                    self.total_weights = total_num
+                    self.update_progress()
+            
+            elif "Skipping excluded" in message or "Skipping empty" in message:
+                # Count skipped weights as processed
+                import re
+                match = re.search(r'\((\d+)/(\d+)\)', message)
+                if match:
+                    current_num = int(match.group(1))
+                    self.processed_weights = current_num
+                    self.update_progress()
+            
+            elif "Optimizing rounding" in message:
+                # Extract optimization progress
+                import re
+                match = re.search(r'(\d+)%', message)
+                if match:
+                    opt_progress = int(match.group(1))
+                    # Update sub-progress for current weight
+                    self.update_progress(opt_progress)
+            
+            elif "Conversion complete!" in message:
+                self.progress_bar.config(value=100)
+                self.progress_label.config(text="Conversion Complete!")
+                
+        except Exception as e:
+            # Don't let progress parsing errors crash the GUI
+            pass
+    
+    def update_progress(self, optimization_progress=0):
+        """Update the progress bar and label"""
+        if self.total_weights > 0:
+            # Calculate overall progress
+            base_progress = (self.processed_weights / self.total_weights) * 100
+            
+            # Add sub-progress for current weight optimization
+            if optimization_progress > 0 and self.processed_weights < self.total_weights:
+                weight_contribution = (1 / self.total_weights) * 100
+                sub_progress = (optimization_progress / 100) * weight_contribution
+                total_progress = base_progress + sub_progress
+            else:
+                total_progress = base_progress
+            
+            self.progress_bar.config(value=min(total_progress, 100))
+            
+            # Update label
+            if self.processed_weights < self.total_weights:
+                if optimization_progress > 0:
+                    label_text = f"Processing {self.processed_weights + 1}/{self.total_weights}: {self.current_weight} ({optimization_progress}%)"
+                else:
+                    label_text = f"Processing {self.processed_weights + 1}/{self.total_weights}: {self.current_weight}"
+            else:
+                label_text = f"Completed {self.processed_weights}/{self.total_weights} weights"
+            
+            self.progress_label.config(text=label_text)
+        else:
+            self.progress_label.config(text="Initializing...")
             
     def generate_modified_script(self):
         """Generate a modified version of the script with the selected optimizer"""
@@ -327,8 +425,15 @@ class LearnedRoundingConverter:
             optimizer.step()
             with torch.no_grad():
                 h.clamp_(0, FP8_MIN_POS)
+            
+            # Print progress every 10% for GUI parsing
+            if i % max(1, self.num_iter // 10) == 0:
+                progress_pct = int((i / self.num_iter) * 100)
+                print(f"    Optimizing rounding: {{progress_pct}}% - Recon: {{recon_loss.item():.4e}}, Reg: {{reg_loss.item():.4e}}")
+            
             pbar.set_postfix({{"Recon Loss": f"{{recon_loss.item():.4e}}", "Reg Loss": f"{{reg_loss.item():.4e}}"}})
             if reg_loss.item() < 1e-8:
+                print(f"    Optimizing rounding: 100% - Early stopping (reg_loss < 1e-8)")
                 break
 
         with torch.no_grad():
@@ -553,9 +658,13 @@ if __name__ == "__main__":
         if not os.path.exists(self.input_file.get()):
             messagebox.showerror("Error", "Input file does not exist")
             return
-            
-        # Start progress bar
-        self.progress_bar.start()
+        
+        # Reset progress tracking
+        self.total_weights = 0
+        self.processed_weights = 0
+        self.current_weight = ""
+        self.progress_bar.config(value=0)
+        self.progress_label.config(text="Starting conversion...")
         
         # Clear output
         self.clear_output()
@@ -632,8 +741,8 @@ if __name__ == "__main__":
             except:
                 pass
             
-            # Stop progress bar
-            self.root.after(0, self.progress_bar.stop)
+            # Reset progress on completion
+            self.root.after(0, lambda: self.progress_label.config(text="Ready"))
 
 def main():
     root = tk.Tk()
