@@ -747,6 +747,8 @@ if __name__ == "__main__":
 def main():
     root = tk.Tk()
     app = FP8QuantizationGUI(root)
+    photo = tk.PhotoImage(file = '48x48_trans.png')
+    root.wm_iconphoto(False, photo)
     root.mainloop()
 
 if __name__ == "__main__":
