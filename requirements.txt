@@ -1,0 +1,26 @@
+# Core PyTorch dependencies
+torch>=2.0.0
+torchvision>=0.15.0
+torchaudio>=2.0.0
+
+# Model serialization
+safetensors>=0.3.0
+
+# Progress bars and utilities
+tqdm>=4.64.0
+
+# Optional: GOODDOG optimizer (uncomment if needed)
+# GOODDOG
+
+# Python standard library dependencies (usually included with Python)
+# tkinter - GUI framework (included with most Python installations)
+# threading - Multi-threading support (built-in)
+# queue - Thread-safe queues (built-in)
+# subprocess - Process management (built-in)
+# pathlib - Path handling (built-in)
+# os - Operating system interface (built-in)
+# sys - System-specific parameters (built-in)
+# gc - Garbage collection (built-in)
+# argparse - Command-line argument parsing (built-in)
+# typing - Type hints (built-in Python 3.5+)
+# re - Regular expressions (built-in)
